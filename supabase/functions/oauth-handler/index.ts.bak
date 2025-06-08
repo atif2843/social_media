@@ -1,0 +1,259 @@
+// OAuth handler for social media platforms
+import { serve } from "https://deno.land/std@0.177.0/http/server.ts";
+import { createClient } from "https://esm.sh/@supabase/supabase-js@2.7.1";
+
+interface AccountData {
+  user_id: string;
+  platform: string;
+  access_token: string;
+  refresh_token: string | null;
+  expires_at: string;
+  page_id?: string;
+  page_name?: string;
+  instagram_account_id?: string;
+  account_id?: string;
+  account_name?: string;
+}
+
+const allowedOrigins = [
+  "http://localhost:3000",
+  "http://localhost:3001",
+  // Add your production URL here when deploying
+];
+
+const corsHeaders = (origin: string) => ({
+  "Access-Control-Allow-Origin": allowedOrigins.includes(origin)
+    ? origin
+    : allowedOrigins[0],
+  "Access-Control-Allow-Methods": "GET, POST, OPTIONS",
+  "Access-Control-Allow-Headers":
+    "authorization, x-client-info, apikey, content-type",
+  "Access-Control-Allow-Credentials": "true",
+});
+
+const validateEnvironment = (platform: string) => {
+  const vars = {
+    supabaseUrl: Deno.env.get("SUPABASE_URL"),
+    supabaseKey: Deno.env.get("SUPABASE_SERVICE_ROLE_KEY"),
+    frontendUrl: Deno.env.get("FRONTEND_URL"),
+    clientId: Deno.env.get(`${platform.toUpperCase()}_CLIENT_ID`),
+    clientSecret: Deno.env.get(`${platform.toUpperCase()}_CLIENT_SECRET`),
+    edgeFunctionUrl: Deno.env.get("EDGE_FUNCTION_URL")
+  };
+
+  console.log("Environment check:", {
+    hasSUPABASE_URL: !!vars.supabaseUrl,
+    hasSUPABASE_KEY: !!vars.supabaseKey,
+    hasFRONTEND_URL: !!vars.frontendUrl,
+    hasEDGE_FUNCTION_URL: !!vars.edgeFunctionUrl,
+    hasClientId: !!vars.clientId,
+    hasClientSecret: !!vars.clientSecret
+  });
+
+  if (!vars.supabaseUrl || !vars.supabaseKey) {
+    throw new Error("Missing Supabase configuration");
+  }
+
+  if (!vars.frontendUrl) {
+    throw new Error("Missing frontend URL configuration");
+  }
+
+  if (!vars.clientId || !vars.clientSecret) {
+    throw new Error(`${platform} OAuth credentials not configured`);
+  }
+
+  if (!vars.edgeFunctionUrl) {
+    throw new Error("Missing Edge Function URL configuration");
+  }
+
+  return vars;
+};
+
+const oauthEndpoints = {
+  facebook: "https://www.facebook.com/v18.0/dialog/oauth",
+  // Add other platforms here
+};
+
+serve(async (req) => {
+  const origin = req.headers.get("Origin") || allowedOrigins[0];
+
+  console.log("Request info:", {
+    method: req.method,
+    url: req.url,
+    headers: Object.fromEntries(req.headers.entries()),
+  });
+
+  // Handle CORS preflight requests
+  if (req.method === "OPTIONS") {
+    return new Response("ok", { headers: corsHeaders(origin) });
+  }
+
+  try {
+    const url = new URL(req.url);
+    const platform = url.searchParams.get("platform");
+
+    console.log("Route info:", {
+      pathname: url.pathname,
+      platform,
+      params: Object.fromEntries(url.searchParams.entries()),
+    });
+    
+    if (!platform) {
+      throw new Error("Platform parameter is required");
+    }
+
+    if (!oauthEndpoints[platform]) {
+      throw new Error(`Unsupported platform: ${platform}`);
+    }
+
+    // Validate environment variables
+    const env = validateEnvironment(platform);
+    
+    // Log environment variable status (without exposing values)
+    console.log("Environment check:", {
+      platform,
+      hasSUPABASE_URL: !!supabaseUrl,
+      hasSUPABASE_KEY: !!supabaseKey,
+      hasFRONTEND_URL: !!frontendUrl,
+      hasClientId: !!clientId,
+      hasClientSecret: !!clientSecret
+    });
+
+    if (!supabaseUrl || !supabaseKey || !frontendUrl) {
+      throw new Error("Missing required environment variables");
+    }
+
+    if (!clientId || !clientSecret) {
+      throw new Error(`${platform} is not properly configured`);
+
+    if (!supabaseUrl || !supabaseKey) {
+      throw new Error("Missing Supabase environment variables");
+    }
+
+    const supabaseClient = createClient(supabaseUrl, supabaseKey);
+
+    // Verify authentication
+    const authHeader = req.headers.get("Authorization");
+    console.log("Auth check:", {
+      hasAuthHeader: !!authHeader,
+      headerType: typeof authHeader,
+      headers: Object.fromEntries(req.headers.entries())
+    });
+
+    if (!authHeader) {
+      return new Response(
+        JSON.stringify({ error: "Missing authorization header" }),
+        {
+          status: 401,
+          headers: {
+            ...corsHeaders(origin),
+            "Content-Type": "application/json",
+          },
+        }
+      );
+    }
+
+    const token = authHeader.replace("Bearer ", "");
+    console.log("Token check:", {
+      hasToken: !!token,
+      tokenLength: token.length,
+    });
+
+    const {
+      data: { user },
+      error: authError,
+    } = await supabaseClient.auth.getUser(token);
+
+    if (authError || !user) {
+      return new Response(
+        JSON.stringify({ error: "Invalid authorization token" }),
+        {
+          status: 401,
+          headers: {
+            ...corsHeaders(origin),
+            "Content-Type": "application/json",
+          },
+        }
+      );
+    }
+
+    const url = new URL(req.url);
+    const platform = url.searchParams.get("platform");
+
+    if (!platform) {
+      throw new Error("Platform is required");
+    }
+
+    // Generate authorization URL
+    const state = crypto.randomUUID();
+    const frontendUrl = Deno.env.get("FRONTEND_URL") || allowedOrigins[0];
+    const redirectUri = `${Deno.env.get(
+      "NEXT_PUBLIC_EDGE_FUNCTION_URL"
+    )}/oauth-handler/callback`;
+    const clientId = Deno.env.get(`${platform.toUpperCase()}_CLIENT_ID`);
+
+    if (!clientId) {
+      throw new Error(`Missing client ID for platform: ${platform}`);
+    }
+
+    // Store state in database
+    const { error: stateError } = await supabaseClient
+      .from("oauth_states")
+      .insert([
+        {
+          state,
+          user_id: user.id,
+          platform,
+          created_at: new Date().toISOString(),
+        },
+      ]);
+
+    if (stateError) {
+      throw new Error("Failed to store OAuth state");
+    }
+
+    // Construct auth URL based on platform
+    const authUrl = new URL(getPlatformAuthUrl(platform));
+    authUrl.searchParams.set("client_id", clientId);
+    authUrl.searchParams.set("redirect_uri", redirectUri);
+    authUrl.searchParams.set("state", state);
+    authUrl.searchParams.set("scope", getPlatformScope(platform));
+    authUrl.searchParams.set("response_type", "code");
+
+    return new Response(JSON.stringify({ url: authUrl.toString() }), {
+      headers: {
+        ...corsHeaders(origin),
+        "Content-Type": "application/json",
+      },
+    });
+  } catch (error) {
+    console.error("Error:", error.message);
+    return new Response(JSON.stringify({ error: error.message }), {
+      status: 400,
+      headers: { ...corsHeaders(origin), "Content-Type": "application/json" },
+    });
+  }
+});
+
+function getPlatformAuthUrl(platform: string): string {
+  const urls = {
+    facebook: "https://www.facebook.com/v18.0/dialog/oauth",
+    instagram: "https://www.facebook.com/v18.0/dialog/oauth",
+    twitter: "https://twitter.com/i/oauth2/authorize",
+    linkedin: "https://www.linkedin.com/oauth/v2/authorization",
+    google: "https://accounts.google.com/o/oauth2/v2/auth",
+  };
+  return urls[platform] || urls.facebook;
+}
+
+function getPlatformScope(platform: string): string {
+  const scopes = {
+    facebook:
+      "pages_show_list,pages_read_engagement,pages_manage_posts,instagram_basic,instagram_content_publish",
+    instagram: "instagram_basic,instagram_content_publish,pages_show_list",
+    twitter: "tweet.read tweet.write users.read offline.access",
+    linkedin: "r_liteprofile w_member_social",
+    google: "https://www.googleapis.com/auth/adwords",
+  };
+  return scopes[platform] || "";
+}

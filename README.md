@@ -1,36 +1,121 @@
-This is a [Next.js](https://nextjs.org) project bootstrapped with [`create-next-app`](https://github.com/vercel/next.js/tree/canary/packages/create-next-app).
+# Social Media Scheduler
 
-## Getting Started
+A Next.js application for scheduling and managing posts across multiple social media platforms.
 
-First, run the development server:
+## Features
+
+- Schedule posts for multiple social media platforms (Facebook, Instagram, Twitter, LinkedIn)
+- Dashboard to view and manage scheduled posts
+- Connect and manage social media accounts
+- Automated posting via Supabase Edge Functions
+
+## Setup
+
+### Prerequisites
+
+- Node.js 18+ and npm
+- Supabase account
+
+### Installation
+
+1. Clone the repository
+2. Install dependencies:
+
+```bash
+npm install
+```
+
+3. Set up environment variables in `.env.local`:
+
+```
+NEXT_PUBLIC_SUPABASE_URL=your_supabase_url
+NEXT_PUBLIC_SUPABASE_ANON_KEY=your_supabase_anon_key
+SUPABASE_SERVICE_ROLE_KEY=your_service_role_key
+
+# Add these when you create your social media apps
+# NEXT_PUBLIC_FACEBOOK_APP_ID=your_facebook_app_id
+# FACEBOOK_APP_SECRET=your_facebook_app_secret
+```
+
+4. Run the development server:
 
 ```bash
 npm run dev
-# or
-yarn dev
-# or
-pnpm dev
-# or
-bun dev
 ```
 
-Open [http://localhost:3000](http://localhost:3000) with your browser to see the result.
+## Database Structure
 
-You can start editing the page by modifying `app/page.js`. The page auto-updates as you edit the file.
+The application uses the following tables in Supabase:
 
-This project uses [`next/font`](https://nextjs.org/docs/app/building-your-application/optimizing/fonts) to automatically optimize and load [Geist](https://vercel.com/font), a new font family for Vercel.
+### `accounts`
 
-## Learn More
+Stores connected social media accounts:
 
-To learn more about Next.js, take a look at the following resources:
+- `id`: UUID (primary key)
+- `user_id`: UUID (foreign key to auth.users)
+- `platform`: Text (facebook, instagram, twitter, linkedin)
+- `access_token`: Text
+- `refresh_token`: Text
+- `expires_at`: Timestamp
+- `created_at`: Timestamp
+- `updated_at`: Timestamp
 
-- [Next.js Documentation](https://nextjs.org/docs) - learn about Next.js features and API.
-- [Learn Next.js](https://nextjs.org/learn) - an interactive Next.js tutorial.
+### `ads` (Scheduled Posts)
 
-You can check out [the Next.js GitHub repository](https://github.com/vercel/next.js) - your feedback and contributions are welcome!
+Stores scheduled posts:
 
-## Deploy on Vercel
+- `id`: UUID (primary key)
+- `user_id`: UUID (foreign key to auth.users)
+- `platform`: Text
+- `content`: Text
+- `media_url`: Text (optional)
+- `schedule_at`: Timestamp
+- `status`: Text (scheduled, published, failed)
+- `posted_at`: Timestamp (optional)
+- `created_at`: Timestamp
+- `updated_at`: Timestamp
 
-The easiest way to deploy your Next.js app is to use the [Vercel Platform](https://vercel.com/new?utm_medium=default-template&filter=next.js&utm_source=create-next-app&utm_campaign=create-next-app-readme) from the creators of Next.js.
+### `logs`
 
-Check out our [Next.js deployment documentation](https://nextjs.org/docs/app/building-your-application/deploying) for more details.
+Stores posting logs:
+
+- `id`: UUID (primary key)
+- `ad_id`: UUID (foreign key to ads)
+- `platform`: Text
+- `status`: Text (success, failed)
+- `response`: JSONB
+- `created_at`: Timestamp
+
+## Edge Functions
+
+The application uses Supabase Edge Functions to handle the posting of scheduled content:
+
+### `post-scheduler`
+
+Checks for scheduled posts that are due and posts them to the appropriate social media platforms.
+
+### `cron-scheduler`
+
+A function that can be triggered by a cron job to regularly check for and process scheduled posts.
+
+## Connecting Social Media Accounts
+
+To connect social media accounts, you need to:
+
+1. Create developer accounts on each platform
+2. Register your application
+3. Configure OAuth settings
+4. Add the appropriate API keys to your environment variables
+
+## Troubleshooting
+
+If you're unable to schedule posts, check the following:
+
+1. Ensure your Supabase database has the correct tables (accounts, ads, logs)
+2. Verify that the Edge Functions are deployed correctly
+3. Check that you have connected at least one social media account
+4. Ensure your environment variables are set correctly
+
+## License
+
+MIT

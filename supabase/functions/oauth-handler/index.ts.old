@@ -1,0 +1,301 @@
+// OAuth handler for social media platforms
+import { serve } from "https://deno.land/std@0.177.0/http/server.ts";
+import { createClient } from "https://esm.sh/@supabase/supabase-js@2.7.1";
+
+// Initialize configuration once
+const allowedOrigins = ["http://localhost:3000", "http://localhost:3001"];
+
+// Get environment variables
+const supabaseUrl = Deno.env.get("SUPABASE_URL");
+const supabaseKey = Deno.env.get("SUPABASE_SERVICE_ROLE_KEY");
+const frontendUrl = Deno.env.get("FRONTEND_URL");
+const edgeFunctionUrl = Deno.env.get("EDGE_FUNCTION_URL");
+
+// Function to validate and get CORS headers based on origin
+const corsHeaders = (origin: string) => {
+  // If the request has credentials, we MUST specify an exact origin
+  const validOrigin = allowedOrigins.includes(origin) ? origin : allowedOrigins[0];
+  console.log("CORS origin:", { requested: origin, using: validOrigin });
+  
+  return {
+    "Access-Control-Allow-Origin": validOrigin,
+    "Access-Control-Allow-Methods": "GET, POST, OPTIONS",
+    "Access-Control-Allow-Headers": "authorization, x-client-info, apikey, content-type",
+    "Access-Control-Allow-Credentials": "true",
+  };
+};
+
+const handleError = (error: Error, origin: string, status = 400) => {
+  console.error("Error:", error.message);
+  return new Response(JSON.stringify({ error: error.message }), {
+    status,
+    headers: {
+      ...corsHeaders(origin),
+      "Content-Type": "application/json",
+    },
+  });
+};
+
+serve(async (req) => {
+  const origin = req.headers.get("Origin") || allowedOrigins[0];
+  // Log request details for debugging
+  console.log("Request:", {
+    method: req.method,
+    url: req.url,
+    origin,
+    headers: Object.fromEntries(req.headers.entries()),
+  });
+
+  // Handle CORS preflight
+  if (req.method === "OPTIONS") {
+    return new Response("ok", { headers: corsHeaders(origin) });
+  }
+  try {
+    // Get URL parameters and path
+    const url = new URL(req.url);
+    const path = url.pathname.split("/").pop() || "";
+
+    // We already have these values from the top-level scope
+    if (!supabaseUrl || !supabaseKey) {
+      return handleError(new Error("Missing Supabase configuration"), origin);
+    
+    if (!supabaseUrl || !supabaseKey) {
+      console.error("Missing Supabase config:", { hasSUPABASE_URL: !!supabaseUrl, hasSUPABASE_KEY: !!supabaseKey });
+      return handleError(new Error("Missing Supabase configuration"), origin);
+    }
+
+    const supabase = createClient(supabaseUrl, supabaseKey);
+
+    console.log("Request info:", {
+      fullUrl: url.toString(),
+      path,
+      searchParams: Object.fromEntries(url.searchParams.entries()),
+    });
+
+    // If this is a callback, get platform from state
+    if (path === "callback") {
+      const state = url.searchParams.get("state");
+      if (!state) {
+        return handleError(new Error("Missing state parameter"), origin);
+      }
+
+      // Get the stored state to retrieve the platform
+      const { data: storedState, error: stateError } = await supabase
+        .from("oauth_states")
+        .select("platform")
+        .eq("state", state)
+        .single();
+
+      if (stateError || !storedState) {
+        console.error("State error:", stateError);
+        return handleError(new Error("Invalid OAuth state"), origin);
+      }
+
+      console.log("Found stored state:", storedState);
+      const platform = storedState.platform;
+      if (!platform) {
+        return handleError(new Error("No platform found in stored state"), origin);
+      }
+      
+      url.searchParams.set("platform", platform);
+    }
+
+    const platform = url.searchParams.get("platform");
+
+    if (!platform) {
+      return handleError(new Error("Platform parameter is required"), origin);
+    }
+
+    // Get Supabase configuration
+    const supabaseUrl = Deno.env.get("SUPABASE_URL");
+    const supabaseKey = Deno.env.get("SUPABASE_SERVICE_ROLE_KEY");
+
+    if (!supabaseUrl || !supabaseKey) {
+      return handleError(new Error("Missing Supabase configuration"), origin);
+    }
+
+    // Get OAuth configuration
+    const clientId = Deno.env.get(`${platform.toUpperCase()}_CLIENT_ID`);
+    const clientSecret = Deno.env.get(
+      `${platform.toUpperCase()}_CLIENT_SECRET`
+    );
+    const frontendUrl = Deno.env.get("FRONTEND_URL");
+    const edgeFunctionUrl = Deno.env.get("EDGE_FUNCTION_URL");
+
+    // Log environment status (without exposing sensitive values)
+    console.log("Environment:", {
+      hasSUPABASE_URL: !!supabaseUrl,
+      hasSUPABASE_KEY: !!supabaseKey,
+      hasFRONTEND_URL: !!frontendUrl,
+      hasEDGE_FUNCTION_URL: !!edgeFunctionUrl,
+      hasClientId: !!clientId,
+      hasClientSecret: !!clientSecret,
+      platform,
+    });
+
+    if (!clientId || !clientSecret) {
+      return handleError(
+        new Error(`${platform} OAuth credentials not configured`),
+        origin
+      );
+    }
+
+    if (!frontendUrl || !edgeFunctionUrl) {
+      return handleError(new Error("Missing URL configuration"), origin);
+    }
+
+    // Initialize Supabase client
+    const supabase = createClient(supabaseUrl, supabaseKey);
+
+    // Verify authentication
+    const authHeader = req.headers.get("Authorization");
+    console.log("Auth:", {
+      hasAuthHeader: !!authHeader,
+      headerType: typeof authHeader,
+    });
+
+    if (!authHeader) {
+      return handleError(
+        new Error("Missing authorization header"),
+        origin,
+        401
+      );
+    }
+
+    // Validate access token
+    const token = authHeader.replace("Bearer ", "");
+    const {
+      data: { user },
+      error: authError,
+    } = await supabase.auth.getUser(token);
+
+    console.log("Auth validation:", {
+      hasUser: !!user,
+      hasError: !!authError,
+      userId: user?.id,
+    });
+
+    if (authError || !user) {
+      return handleError(new Error("Invalid authorization token"), origin, 401);
+    }    // Get the path from the URL
+    const path = url.pathname.split("/").pop();
+
+    // Handle callback from OAuth provider
+    if (path === "callback") {
+      const code = url.searchParams.get("code");
+      const state = url.searchParams.get("state");
+      
+      if (!code || !state) {
+        return handleError(new Error("Missing code or state parameter"), origin);
+      }
+
+      // Retrieve stored state from database
+      const { data: storedState, error: stateError } = await supabase
+        .from("oauth_states")
+        .select("platform, user_id")
+        .eq("state", state)
+        .single();
+
+      if (stateError || !storedState) {
+        return handleError(new Error("Invalid OAuth state"), origin);
+      }
+
+      const platform = storedState.platform;
+      const redirectUri = `${edgeFunctionUrl}/oauth-handler/callback`;
+
+      // Exchange code for access token
+      const tokenResponse = await fetch(
+        "https://graph.facebook.com/v18.0/oauth/access_token",
+        {
+          method: "GET",
+          headers: { "Content-Type": "application/json" },
+        }
+      ).then((res) => res.json());
+
+      if (!tokenResponse.access_token) {
+        return handleError(new Error("Failed to get access token"), origin);
+      }
+
+      // Store the access token
+      const { error: accountError } = await supabase.from("accounts").insert([
+        {
+          user_id: storedState.user_id,
+          platform,
+          access_token: tokenResponse.access_token,
+          refresh_token: tokenResponse.refresh_token || null,
+          expires_at: tokenResponse.expires_in
+            ? new Date(Date.now() + tokenResponse.expires_in * 1000).toISOString()
+            : null,
+        },
+      ]);
+
+      if (accountError) {
+        return handleError(new Error("Failed to store access token"), origin);
+      }
+
+      // Clean up the used state
+      await supabase.from("oauth_states").delete().eq("state", state);
+
+      // Redirect back to the frontend
+      return new Response(null, {
+        status: 302,
+        headers: {
+          ...corsHeaders(origin),
+          Location: `${frontendUrl}/settings?platform=${platform}&success=true`,
+        },
+      });
+    }
+
+    // Handle initial authorization request
+    if (path === "authorize") {
+      const state = crypto.randomUUID();
+      const redirectUri = `${edgeFunctionUrl}/oauth-handler/callback`;
+
+      // Store OAuth state
+      const { error: stateError } = await supabase.from("oauth_states").insert([
+        {
+          state,
+          user_id: user.id,
+          platform,
+          created_at: new Date().toISOString(),
+        },
+      ]);
+
+      if (stateError) {
+        console.error("State storage error:", stateError);
+        return handleError(new Error("Failed to store OAuth state"), origin);
+      }
+
+      // Build OAuth URL based on platform
+      const authUrl = new URL(
+        platform === "facebook"
+          ? "https://www.facebook.com/v18.0/dialog/oauth"
+          : ""
+      );
+
+      authUrl.searchParams.set("client_id", clientId);
+      authUrl.searchParams.set("redirect_uri", redirectUri);
+      authUrl.searchParams.set("state", state);
+      authUrl.searchParams.set("response_type", "code");
+
+      if (platform === "facebook") {
+        authUrl.searchParams.set(
+          "scope",
+          "pages_show_list,pages_read_engagement,pages_manage_posts"
+        );
+      }
+
+      return new Response(JSON.stringify({ url: authUrl.toString() }), {
+        status: 200,
+        headers: {
+          ...corsHeaders(origin),
+          "Content-Type": "application/json",
+        },
+      });
+    }
+
+    return handleError(new Error("Invalid endpoint"), origin);
+  } catch (error) {
+    return handleError(error as Error, origin);
+  }
+});

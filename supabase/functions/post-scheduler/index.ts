@@ -30,8 +30,8 @@ serve(async (req) => {
       .from('ads')
       .select('*, accounts!inner(*)')
       .eq('status', 'scheduled')
-      .lte('scheduled_time', now.toISOString())
-      .order('scheduled_time', { ascending: true });
+      .lte('schedule_at', now.toISOString())
+      .order('schedule_at', { ascending: true });
 
     if (fetchError) {
       console.error('Error fetching scheduled ads:', fetchError);

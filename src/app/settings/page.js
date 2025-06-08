@@ -1,34 +1,34 @@
 'use client';
 
 import { useState, useEffect } from 'react';
-import { createClient } from '@supabase/supabase-js';
-import { toast } from 'react-hot-toast';
+import { toast } from 'sonner';
 import SocialAccountCard from '@/components/SocialAccountCard';
-
-const supabaseUrl = process.env.NEXT_PUBLIC_SUPABASE_URL;
-const supabaseAnonKey = process.env.NEXT_PUBLIC_SUPABASE_ANON_KEY;
-
-const supabase = createClient(supabaseUrl, supabaseAnonKey);
+import supabase from '@/lib/supabase';
+import useStore from '@/lib/store';
 
 export default function SettingsPage() {
-  const [user, setUser] = useState(null);
+  const user = useStore((state) => state.user);
   const [accounts, setAccounts] = useState([]);
   const [isLoading, setIsLoading] = useState(true);
   const [activeTab, setActiveTab] = useState('social'); // 'social' or 'advertising'
+  const [refreshTrigger, setRefreshTrigger] = useState(0);
+
+  // Function to refresh accounts data
+  const refreshAccounts = () => {
+    console.log('refreshAccounts called, updating refreshTrigger');
+    setRefreshTrigger(prev => prev + 1);
+  };
 
   useEffect(() => {
-    const fetchUserAndAccounts = async () => {
+    const fetchAccounts = async () => {
+      if (!user) {
+        setIsLoading(false);
+        return;
+      }
+      
+      setIsLoading(true);
       try {
-        // Get the current user
-        const { data: { user }, error: userError } = await supabase.auth.getUser();
-        
-        if (userError) throw userError;
-        if (!user) {
-          toast.error('You must be logged in to view settings');
-          return;
-        }
-        
-        setUser(user);
+        console.log('Fetching accounts data for user:', user.id);
         
         // Get the user's connected accounts
         const { data: accountsData, error: accountsError } = await supabase
@@ -38,17 +38,18 @@ export default function SettingsPage() {
         
         if (accountsError) throw accountsError;
         
+        console.log('Accounts data received:', accountsData);
         setAccounts(accountsData || []);
       } catch (error) {
-        console.error('Error fetching user data:', error);
-        toast.error('Failed to load user data. Please try again.');
+        console.error('Error fetching accounts data:', error);
+        toast.error('Failed to load accounts data. Please try again.');
       } finally {
         setIsLoading(false);
       }
     };
     
-    fetchUserAndAccounts();
-  }, []);
+    fetchAccounts();
+  }, [user, refreshTrigger]); // Add refreshTrigger to dependencies
   
   const getAccountByPlatform = (platform) => {
     return accounts.find(account => account.platform === platform) || null;
@@ -63,6 +64,17 @@ export default function SettingsPage() {
         <h1 className="text-2xl font-bold mb-6">Settings</h1>
         <div className="flex justify-center items-center h-64">
           <div className="animate-spin rounded-full h-12 w-12 border-t-2 border-b-2 border-blue-500"></div>
+        </div>
+      </div>
+    );
+  }
+  
+  if (!user) {
+    return (
+      <div className="container mx-auto p-6">
+        <h1 className="text-2xl font-bold mb-6">Settings</h1>
+        <div className="bg-yellow-100 border-l-4 border-yellow-500 text-yellow-700 p-4 mb-6">
+          <p>You must be logged in to view settings. Please <a href="/login?returnTo=/settings" className="text-blue-600 hover:underline">log in</a> to continue.</p>
         </div>
       </div>
     );
@@ -113,6 +125,7 @@ export default function SettingsPage() {
                 platform={platform}
                 accountData={getAccountByPlatform(platform)}
                 userId={user?.id}
+                refreshAccounts={refreshAccounts}
               />
             ))}
           </div>
@@ -127,6 +140,7 @@ export default function SettingsPage() {
                 platform={platform}
                 accountData={getAccountByPlatform(platform)}
                 userId={user?.id}
+                refreshAccounts={refreshAccounts}
               />
             ))}
           </div>

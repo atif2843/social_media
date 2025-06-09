@@ -269,7 +269,10 @@ serve(async (req) => {
     searchParams: Object.fromEntries(url.searchParams.entries()),
     headers: Object.fromEntries(req.headers.entries()),
   };
-  console.log("Incoming request details:", JSON.stringify(requestDetails, null, 2));
+  console.log(
+    "Incoming request details:",
+    JSON.stringify(requestDetails, null, 2)
+  );
 
   // Handle CORS preflight
   if (req.method === "OPTIONS") {
@@ -293,7 +296,10 @@ serve(async (req) => {
 
       if (!code || !state) {
         console.error("Missing callback parameters:", { code, state });
-        return handleError(new Error("Missing code or state parameter"), origin);
+        return handleError(
+          new Error("Missing code or state parameter"),
+          origin
+        );
       }
 
       // Get configuration for callback
@@ -306,8 +312,18 @@ serve(async (req) => {
       }
 
       // Initialize Supabase admin client for callback
-      const supabaseAdmin = createClient(config.supabaseUrl, config.supabaseKey);
-      return await handleOAuthCallback(code, state, platform, config, supabaseAdmin, origin);
+      const supabaseAdmin = createClient(
+        config.supabaseUrl,
+        config.supabaseKey
+      );
+      return await handleOAuthCallback(
+        code,
+        state,
+        platform,
+        config,
+        supabaseAdmin,
+        origin
+      );
     }
 
     // For non-callback paths, proceed with normal flow
@@ -335,10 +351,15 @@ serve(async (req) => {
       }
 
       const token = authHeader.replace("Bearer ", "");
-      const { data: userData, error: authError } = await supabaseAdmin.auth.getUser(token);
+      const { data: userData, error: authError } =
+        await supabaseAdmin.auth.getUser(token);
 
       if (authError || !userData?.user) {
-        return handleError(new Error("Invalid authentication token"), origin, 401);
+        return handleError(
+          new Error("Invalid authentication token"),
+          origin,
+          401
+        );
       }
 
       // Create OAuth state

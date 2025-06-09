@@ -6,7 +6,11 @@ import supabase from "@/lib/supabase";
 import useStore from "@/lib/store";
 import { toast } from "sonner";
 
-export default function SocialAccountCard({ platform, accountData, refreshAccounts }) {
+export default function SocialAccountCard({
+  platform,
+  accountData,
+  refreshAccounts,
+}) {
   const router = useRouter();
   const searchParams = useSearchParams();
   const [isDisconnecting, setIsDisconnecting] = useState(false);
@@ -80,11 +84,11 @@ export default function SocialAccountCard({ platform, accountData, refreshAccoun
       });
 
       // Ensure platform is correctly formatted
-      const normalizedPlatform = platform.toLowerCase();      // Build the Edge Function URL
+      const normalizedPlatform = platform.toLowerCase(); // Build the Edge Function URL
       const baseUrl = `${process.env.NEXT_PUBLIC_EDGE_FUNCTION_URL}/oauth-handler/authorize`;
       const params = new URLSearchParams();
       params.append("platform", normalizedPlatform);
-      
+
       const url = `${baseUrl}?${params.toString()}`;
 
       // Debug log for final request
@@ -139,33 +143,35 @@ export default function SocialAccountCard({ platform, accountData, refreshAccoun
 
     setIsDisconnecting(true);
     try {
-      console.log('Disconnecting account:', accountData);
-      
+      console.log("Disconnecting account:", accountData);
+
       // Make sure we have the account ID
       if (!accountData.id) {
-        throw new Error('Account ID is missing');
+        throw new Error("Account ID is missing");
       }
-      
+
       // Import the socialMediaService
-      const { socialMediaService } = await import('@/services/socialMediaService');
-      
+      const { socialMediaService } = await import(
+        "@/services/socialMediaService"
+      );
+
       // Use the service to disconnect the account
       await socialMediaService.disconnectAccount(accountData.id);
-      
+
       toast.success(`Disconnected from ${getPlatformDisplayName(platform)}`);
-      
+
       // Immediately update local state to show Connect button
       setLocalConnected(false);
-      
+
       // Add a small delay to ensure the database operation has completed
       setTimeout(() => {
         // Refresh the accounts data if the refreshAccounts function is available
-        if (typeof refreshAccounts === 'function') {
-          console.log('Refreshing accounts data...');
+        if (typeof refreshAccounts === "function") {
+          console.log("Refreshing accounts data...");
           refreshAccounts();
         } else {
           // Fallback to reloading the page if refreshAccounts is not available
-          console.log('Reloading page...');
+          console.log("Reloading page...");
           window.location.reload();
         }
       }, 500); // 500ms delay
@@ -181,7 +187,7 @@ export default function SocialAccountCard({ platform, accountData, refreshAccoun
   useEffect(() => {
     setLocalConnected(!!accountData);
   }, [accountData]);
-  
+
   const isConnected = localConnected && !!accountData;
 
   return (

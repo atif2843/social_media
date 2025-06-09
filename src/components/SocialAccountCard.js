@@ -80,13 +80,11 @@ export default function SocialAccountCard({ platform, accountData, refreshAccoun
       });
 
       // Ensure platform is correctly formatted
-      const normalizedPlatform = platform.toLowerCase();
-      // Build the Edge Function URL
+      const normalizedPlatform = platform.toLowerCase();      // Build the Edge Function URL
       const baseUrl = `${process.env.NEXT_PUBLIC_EDGE_FUNCTION_URL}/oauth-handler/authorize`;
       const params = new URLSearchParams();
       params.append("platform", normalizedPlatform);
-      params.append("user_id", session.user.id);
-
+      
       const url = `${baseUrl}?${params.toString()}`;
 
       // Debug log for final request

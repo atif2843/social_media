@@ -260,6 +260,7 @@ const handleOAuthCallback = async (
 serve(async (req) => {
   const origin = req.headers.get("Origin") || allowedOrigins[0];
   const url = new URL(req.url);
+
   // Log incoming request details
   const requestDetails = {
     method: req.method,
@@ -268,14 +269,12 @@ serve(async (req) => {
     searchParams: Object.fromEntries(url.searchParams.entries()),
     headers: Object.fromEntries(req.headers.entries()),
   };
-  console.log(
-    "Incoming request details:",
-    JSON.stringify(requestDetails, null, 2)
-  );
+  console.log("Incoming request details:", JSON.stringify(requestDetails, null, 2));
+
   // Handle CORS preflight
   if (req.method === "OPTIONS") {
     return new Response(null, {
-      status: 204, // No content for OPTIONS
+      status: 204,
       headers: {
         ...corsHeaders(origin),
         "Access-Control-Allow-Methods": "GET, POST, OPTIONS",
@@ -283,34 +282,18 @@ serve(async (req) => {
       },
     });
   }
-  try {
-    // Handle callback from OAuth provider first - no auth required for this path
-    const isCallback =
-      url.pathname.includes("/callback") || url.pathname.endsWith("/callback");
-    console.log("Is callback path:", isCallback, "Path:", url.pathname);
 
-    if (isCallback) {
-      const platform = url.searchParams.get("platform");
+  try {
+    // Special handling for callback path
+    if (url.pathname.endsWith("/callback")) {
+      console.log("Processing OAuth callback...");
+      const platform = url.searchParams.get("platform") || "facebook"; // Default to facebook for now
       const code = url.searchParams.get("code");
       const state = url.searchParams.get("state");
 
-      console.log("Callback parameters:", {
-        platform,
-        code: code?.substring(0, 10) + "...",
-        state,
-      });
-
-      if (!platform) {
-        console.error("Missing platform in callback");
-        return handleError(new Error("Platform parameter is required"), origin);
-      }
-
       if (!code || !state) {
-        console.error("Missing code or state in callback");
-        return handleError(
-          new Error("Missing code or state parameter"),
-          origin
-        );
+        console.error("Missing callback parameters:", { code, state });
+        return handleError(new Error("Missing code or state parameter"), origin);
       }
 
       // Get configuration for callback
@@ -318,30 +301,18 @@ serve(async (req) => {
       try {
         config = getEnvConfig(platform);
       } catch (error) {
+        console.error("Config error in callback:", error);
         return handleError(error as Error, origin);
       }
 
       // Initialize Supabase admin client for callback
-      const supabaseAdmin = createClient(
-        config.supabaseUrl,
-        config.supabaseKey
-      );
-      return await handleOAuthCallback(
-        code,
-        state,
-        platform,
-        config,
-        supabaseAdmin,
-        origin
-      );
+      const supabaseAdmin = createClient(config.supabaseUrl, config.supabaseKey);
+      return await handleOAuthCallback(code, state, platform, config, supabaseAdmin, origin);
     }
 
-    // For non-callback paths, validate platform and get config
+    // For non-callback paths, proceed with normal flow
     const platform = url.searchParams.get("platform");
-    console.log("Platform parameter:", platform);
-
     if (!platform) {
-      console.error("Missing platform parameter");
       return handleError(new Error("Platform parameter is required"), origin);
     }
 
@@ -349,43 +320,34 @@ serve(async (req) => {
     let config: EnvConfig;
     try {
       config = getEnvConfig(platform);
-      console.log("Configuration loaded for platform:", platform);
     } catch (error) {
-      console.error("Configuration error:", error);
       return handleError(error as Error, origin);
-    } // Initialize Supabase admin client (with service role key)
+    }
+
+    // Initialize Supabase admin client
     const supabaseAdmin = createClient(config.supabaseUrl, config.supabaseKey);
 
-    // For all other paths, require authentication
-    const authHeader = req.headers.get("Authorization");
-    if (!authHeader) {
-      return handleError(new Error("Authentication required"), origin, 401);
-    }
-
-    const token = authHeader.replace("Bearer ", "");
-    const { data: userData, error: authError } =
-      await supabaseAdmin.auth.getUser(token);
-
-    if (authError || !userData?.user) {
-      return handleError(
-        new Error("Invalid authentication token"),
-        origin,
-        401
-      );
-    }
-
-    const user = userData.user;
-
-    // Handle authorization request
+    // For /authorize endpoint, require authentication
     if (url.pathname.endsWith("/authorize")) {
-      const state = crypto.randomUUID();
+      const authHeader = req.headers.get("Authorization");
+      if (!authHeader) {
+        return handleError(new Error("Authentication required"), origin, 401);
+      }
 
-      // Store OAuth state
+      const token = authHeader.replace("Bearer ", "");
+      const { data: userData, error: authError } = await supabaseAdmin.auth.getUser(token);
+
+      if (authError || !userData?.user) {
+        return handleError(new Error("Invalid authentication token"), origin, 401);
+      }
+
+      // Create OAuth state
+      const state = crypto.randomUUID();
       const { error: stateError } = await supabaseAdmin
         .from("oauth_states")
         .insert({
           state,
-          user_id: user.id,
+          user_id: userData.user.id,
           platform,
           created_at: new Date().toISOString(),
         });
@@ -395,7 +357,7 @@ serve(async (req) => {
         return handleError(new Error("Failed to store OAuth state"), origin);
       }
 
-      // Build OAuth URL based on platform
+      // Build OAuth URL
       const authUrl = new URL(
         platform === "facebook"
           ? "https://www.facebook.com/v18.0/dialog/oauth"
@@ -413,7 +375,7 @@ serve(async (req) => {
       if (platform === "facebook") {
         authUrl.searchParams.set(
           "scope",
-          "email,publish_video,pages_manage_cta,pages_show_list,ads_management,business_management,pages_messaging,pages_messaging_phone_number,instagram_basic,instagram_manage_comments,instagram_manage_insights,instagram_content_publish,page_events,pages_read_engagement,pages_manage_metadata,pages_read_user_content,pages_manage_ads,pages_manage_posts,pages_manage_engagement,instagram_shopping_tag_products,instagram_manage_events,instagram_manage_upcoming_events"
+          "pages_show_list,pages_read_engagement,pages_manage_posts,pages_manage_metadata"
         );
       }
 

@@ -15,42 +15,62 @@ export async function middleware(req) {
       },
     }
   );
-  const {
-    data: { session },
-    error: sessionError,
-  } = await supabase.auth.getSession();
+  
+  try {
+    const {
+      data: { session },
+    } = await supabase.auth.getSession();
 
-  if (sessionError) {
-    console.error("Auth error:", sessionError);
-    if (req.nextUrl.pathname.startsWith("/settings")) {
-      return NextResponse.redirect(new URL("/login", req.url));
+    // Define public routes that don't require authentication
+    const publicRoutes = ["/", "/login", "/signup", "/auth/callback"];
+    const isPublicRoute = publicRoutes.some(
+      (route) =>
+        req.nextUrl.pathname === route ||
+        req.nextUrl.pathname.startsWith("/auth/")
+    );
+
+    // If user is not signed in and trying to access a protected route
+    if (!session && !isPublicRoute) {
+      const redirectUrl = new URL("/login", req.url);
+      redirectUrl.searchParams.set("returnTo", req.nextUrl.pathname);
+      return NextResponse.redirect(redirectUrl);
     }
+
+    // If user is signed in and trying to access public routes
+    if (
+      session &&
+      (req.nextUrl.pathname === "/login" || req.nextUrl.pathname === "/signup")
+    ) {
+      return NextResponse.redirect(new URL("/dashboard", req.url));
+    }
+
+    return res;
+  } catch (error) {
+    console.error("Auth error in middleware:", error);
+    
+    // Clear invalid auth cookies if there's a refresh token error
+    if (error.message?.includes("Refresh Token Not Found") || 
+        error.code === "refresh_token_not_found") {
+      res.cookies.delete("sb-access-token");
+      res.cookies.delete("sb-refresh-token");
+      
+      // Only redirect to login for protected routes
+      const publicRoutes = ["/", "/login", "/signup", "/auth/callback"];
+      const isPublicRoute = publicRoutes.some(
+        (route) =>
+          req.nextUrl.pathname === route ||
+          req.nextUrl.pathname.startsWith("/auth/")
+      );
+      
+      if (!isPublicRoute) {
+        const redirectUrl = new URL("/login", req.url);
+        redirectUrl.searchParams.set("returnTo", req.nextUrl.pathname);
+        return NextResponse.redirect(redirectUrl);
+      }
+    }
+    
+    return res;
   }
-
-  // Define public routes that don't require authentication
-  const publicRoutes = ["/", "/login", "/signup", "/auth/callback"];
-  const isPublicRoute = publicRoutes.some(
-    (route) =>
-      req.nextUrl.pathname === route ||
-      req.nextUrl.pathname.startsWith("/auth/")
-  );
-
-  // If user is not signed in and trying to access a protected route
-  if (!session && !isPublicRoute) {
-    const redirectUrl = new URL("/login", req.url);
-    redirectUrl.searchParams.set("returnTo", req.nextUrl.pathname);
-    return NextResponse.redirect(redirectUrl);
-  }
-
-  // If user is signed in and trying to access public routes
-  if (
-    session &&
-    (req.nextUrl.pathname === "/login" || req.nextUrl.pathname === "/signup")
-  ) {
-    return NextResponse.redirect(new URL("/dashboard", req.url));
-  }
-
-  return res;
 }
 
 export const config = {

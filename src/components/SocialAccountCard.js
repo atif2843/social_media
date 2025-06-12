@@ -15,6 +15,7 @@ export default function SocialAccountCard({
   const searchParams = useSearchParams();
   const [isDisconnecting, setIsDisconnecting] = useState(false);
   const [localConnected, setLocalConnected] = useState(!!accountData);
+  const [isLoading, setIsLoading] = useState(false);
   const user = useStore((state) => state.user);
 
   useEffect(() => {
@@ -58,76 +59,67 @@ export default function SocialAccountCard({
     }
 
     try {
-      // Get the current session
-      const {
-        data: { session },
-        error: sessionError,
-      } = await supabase.auth.getSession();
-
-      if (sessionError) {
-        console.error("Session error:", sessionError);
-        toast.error("Authentication error");
+      setIsLoading(true);
+      const { data: { session } } = await supabase.auth.getSession();
+      if (!session) {
+        toast.error('You must be logged in to connect a social media account');
         return;
       }
 
-      if (!session?.access_token) {
-        console.error("No access token found");
-        toast.error("Authentication required");
-        return;
-      }
+      console.log('Connecting platform:', platform);
+      console.log('User ID:', session.user.id);
+      console.log('Access token available:', !!session.access_token);
 
-      // Debug logs for request parameters
-      console.log("Request parameters:", {
-        platform,
-        user_id: session.user.id,
-        edgeFunctionUrl: process.env.NEXT_PUBLIC_EDGE_FUNCTION_URL,
-      });
-
-      // Ensure platform is correctly formatted
-      const normalizedPlatform = platform.toLowerCase(); // Build the Edge Function URL
-      const baseUrl = `${process.env.NEXT_PUBLIC_EDGE_FUNCTION_URL}/oauth-handler/authorize`;
+      // Construct URL with parameters
+      const url = new URL(`${process.env.NEXT_PUBLIC_SUPABASE_URL}/functions/v1/oauth-handler/authorize`);
       const params = new URLSearchParams();
-      params.append("platform", normalizedPlatform);
+      params.append("platform", platform);
+      params.append("user_id", session.user.id);
+      url.search = params.toString();
 
-      const url = `${baseUrl}?${params.toString()}`;
+      console.log('Request URL:', url.toString());
+      console.log('Using access token for authorization');
 
-      // Debug log for final request
-      console.log("Making request to:", {
-        url,
-        headers: {
-          Authorization:
-            "Bearer " + session.access_token.substring(0, 10) + "...",
-          "Content-Type": "application/json",
-        },
-      });
-
+      // Make the request to get the authorization URL
       const response = await fetch(url, {
-        method: "GET",
+        method: 'GET',
         headers: {
-          Authorization: `Bearer ${session.access_token}`,
-          "Content-Type": "application/json",
-        },
+          'Authorization': `Bearer ${session.access_token}`,
+          'Content-Type': 'application/json'
+        }
       });
 
       // Debug log for response
       console.log("Response status:", response.status);
+      console.log("Response status text:", response.statusText);
 
-      const data = await response.json();
-      console.log("Response data:", data);
+      // Try to parse the response as JSON
+      let data;
+      const responseText = await response.text();
+      console.log("Raw response:", responseText);
+      
+      try {
+        data = JSON.parse(responseText);
+        console.log("Parsed response data:", data);
+      } catch (parseError) {
+        console.error("Failed to parse response as JSON:", parseError);
+        throw new Error(`Invalid response format: ${responseText}`);
+      }
 
       if (!response.ok) {
         console.error("Auth request failed:", {
           status: response.status,
           statusText: response.statusText,
           data,
-          requestUrl: url,
+          requestUrl: url.toString(),
         });
-        throw new Error(data.error || "Failed to get authorization URL");
+        throw new Error(data.message || data.error || `Request failed with status ${response.status}`);
       }
 
       if (data.url) {
         // Store the current URL to redirect back after auth
         sessionStorage.setItem("oauth_redirect_url", window.location.href);
+        console.log("Redirecting to OAuth URL:", data.url);
         window.location.href = data.url;
       } else {
         throw new Error("No authorization URL returned");
@@ -135,6 +127,8 @@ export default function SocialAccountCard({
     } catch (error) {
       console.error("Connection error:", error);
       toast.error(error.message || "Failed to initiate connection");
+    } finally {
+      setIsLoading(false);
     }
   };
 
@@ -211,7 +205,7 @@ export default function SocialAccountCard({
 
         <button
           onClick={isConnected ? handleDisconnect : handleConnect}
-          disabled={isDisconnecting}
+          disabled={isDisconnecting || isLoading}
           className={`px-4 py-2 rounded-md ${
             isConnected
               ? "bg-red-500 hover:bg-red-600 text-white"
@@ -220,6 +214,8 @@ export default function SocialAccountCard({
         >
           {isDisconnecting
             ? "Disconnecting..."
+            : isLoading
+            ? "Connecting..."
             : isConnected
             ? "Disconnect"
             : "Connect"}

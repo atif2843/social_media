@@ -18,12 +18,9 @@ export default function AuthCallbackPage() {
       try {
         setLoading(true);
 
-        // Clear any existing auth data first
+        // Clear any existing auth data properly
+        await supabase.auth.signOut();
         resetStore();
-        window.localStorage.removeItem("auth-storage");
-        window.sessionStorage.removeItem("auth-storage");
-        window.localStorage.removeItem("supabase.auth.token");
-        window.sessionStorage.removeItem("supabase.auth.token");
 
         const code = searchParams.get("code");
 

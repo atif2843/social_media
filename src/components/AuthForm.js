@@ -22,12 +22,9 @@ export function AuthForm({ type = "login" }) {
     setLoading(true);
 
     try {
-      // Clear any existing auth data first
+      // Clear any existing auth data properly
+      await supabase.auth.signOut();
       resetStore();
-      window.localStorage.removeItem("auth-storage");
-      window.sessionStorage.removeItem("auth-storage");
-      window.localStorage.removeItem("supabase.auth.token");
-      window.sessionStorage.removeItem("supabase.auth.token");
 
       if (type === "login") {
         // Sign in

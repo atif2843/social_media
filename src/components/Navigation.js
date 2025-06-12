@@ -232,6 +232,25 @@ export default function Navigation() {
     </div>
   );
 
+  const FooterLinks = () => (
+    <div className={cn("border-t py-4 px-4", isCollapsed ? "text-center" : "")}>
+      <div
+        className={cn(
+          "flex gap-2 text-sm text-gray-500",
+          isCollapsed ? "flex-col items-center" : "items-center"
+        )}
+      >
+        <Link href="/privacy" className="hover:text-gray-900">
+          Privacy Policy
+        </Link>
+        {!isCollapsed && <span>•</span>}
+        <Link href="/terms" className="hover:text-gray-900">
+          Terms
+        </Link>
+      </div>
+    </div>
+  );
+
   // Don't show navigation on public routes
   if (
     !user ||
@@ -273,6 +292,7 @@ export default function Navigation() {
             </div>
             <NavigationContent />
             <UserSection />
+            <FooterLinks />
           </div>
         </SheetContent>
       </Sheet>
@@ -310,6 +330,7 @@ export default function Navigation() {
           </div>
           <NavigationContent />
           <UserSection />
+          <FooterLinks />
         </div>
       </aside>
     </>
